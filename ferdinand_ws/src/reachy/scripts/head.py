@@ -10,11 +10,14 @@ import time
 # Message Object Format to receive face detection datas
 from ferdinand_msgs.msg import FaceDetectionData
 
+# Message Object Format to send trunk orientation
+from std_msgs.msg import Float64
+
 # See which protocol version is used in the Dynamixel
 PROTOCOL_VERSION            = 1.0               
 
 # Check which port is being used on your controller
-DEVICENAME                  = '/dev/ttyUSB0'          
+DEVICENAME                  = '/dev/ttyUSB0'
 
 # Reachy's Head Baudrate
 BAUDRATE1                    = 57600     
@@ -42,6 +45,13 @@ EYES_UD_MIN = 1600
 # Eyes Up Down Motor Max Position
 EYES_UD_MAX = 2600
 
+# Trunk goes left min
+TRUNK_MIN_L = -1.5
+# Trunk goes right max
+TRUNK_MAX_R = 1.5
+# Trunk current angle
+TRUNK_CURRENT_ANGLE = 0.0
+
 # Eyes Left Right Motor Min Position
 EYES_LR_MIN = 1400
 # Eyes Left Right Motor Max Position
@@ -62,14 +72,14 @@ POS_UD = 2100
 # Counter that calculates the number of frames for which data has been received
 CP_DATA_FLOW_INIT = 0
 # The number of frames used to average the data for decision making on the robot
-CP_DATA_FLOW_MAX = 3
+CP_DATA_FLOW_MAX = 6
 
 # The proportionality coefficient of the pid to move the eyes
-Kp = 0.5
+Kp = 0.8
 # The proportionality coefficient of the pid to move the neck
-Kp2 = 0.05
+Kp2 = 0.08
 # The derivative coefficient of the pid to move the eyes
-Kd = 0.1
+Kd = 0.2
 # the previous error for the pid for the eyes up down motor
 erreur_lr_pred = 0
 # the previous error for the pid for the eyes left right motor
@@ -143,7 +153,7 @@ def set_torque(dxl_id, torque_value, packetHandler, portHandler):
 def go_right(erreur):
     global POS_LR 
     global POS_LR_N
-    
+    global TRUNK_CURRENT_ANGLE
     global Kp
     global Kp2
     global Kd
@@ -162,6 +172,10 @@ def go_right(erreur):
         POS_LR_N += int(commande)
         if POS_LR_N > NECK_LR_MAX:
             POS_LR_N = NECK_LR_MAX
+            TRUNK_CURRENT_ANGLE = TRUNK_CURRENT_ANGLE + 0.05
+            if TRUNK_CURRENT_ANGLE > TRUNK_MAX_R:
+                TRUNK_CURRENT_ANGLE = TRUNK_MAX_R
+            publish_trunk_angle(TRUNK_CURRENT_ANGLE)
         set_position(ID_NECK_LR, POS_LR_N, PACKET_H1, PORT_H1)
         
 
@@ -170,7 +184,7 @@ def go_right(erreur):
 def go_left(erreur):
     global POS_LR
     global POS_LR_N
-    
+    global TRUNK_CURRENT_ANGLE
     global Kp
     global Kp2
     global Kd
@@ -189,6 +203,10 @@ def go_left(erreur):
         POS_LR_N -= int(-commande)
         if POS_LR_N < NECK_LR_MIN:
             POS_LR_N = NECK_LR_MIN
+            TRUNK_CURRENT_ANGLE = TRUNK_CURRENT_ANGLE - 0.05
+            if TRUNK_CURRENT_ANGLE < TRUNK_MIN_L:
+                TRUNK_CURRENT_ANGLE = TRUNK_MIN_L
+            publish_trunk_angle(TRUNK_CURRENT_ANGLE)
         set_position(ID_NECK_LR, POS_LR_N, PACKET_H1, PORT_H1)
 
 # To look further up
@@ -328,7 +346,14 @@ def callback_receive_data(msg):
         SUM_YMAX = 0
 
 
-   
+# Publisher to send trunk orientation to the topic : "/panel/command"
+pub_trunk = rospy.Publisher("/panel/command", Float64, queue_size=10)
+# Function that uses the publisher to send trunk orientation
+def publish_trunk_angle(angle):
+    msg = Float64()
+    msg.data = angle
+    pub_trunk.publish(msg)
+
         
 if __name__ == '__main__':
 
@@ -351,6 +376,8 @@ if __name__ == '__main__':
     set_position(ID_NECK_LR, POS_LR_N, PACKET_H1, PORT_H1)
     set_torque(ID_NECK_UD, 1, PACKET_H1, PORT_H1)
     set_torque(ID_NECK_P_LR, 1, PACKET_H1, PORT_H1)
+    publish_trunk_angle(TRUNK_CURRENT_ANGLE)
+
     
     sub = None 
     while not rospy.is_shutdown():
